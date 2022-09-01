@@ -1,9 +1,8 @@
 ﻿import os
 
-import docker
+import configparser
 import requests
 import base64
-import subprocess as sub
 
 def start_gitea():
     command = 'docker-compose up -d'
@@ -18,63 +17,57 @@ def stop_gitea():
     os.system(command)
     print()
 
-def auth():
-    username = "user1"
-    passwd = "732password"
+
+def get_token(username, passwd):
+    config = configparser.ConfigParser()
+    cur_dir = os.getcwd()
+    path = cur_dir+"/token.ini"
+    if os.path.exists(path):
+        config.read(path)
+    else:
+        config['DEFAULT'] = {}
+    gitea_part_token = call_token(username,passwd)
+    print("Проверка наличия токена в файле.")
+    print(config)
+    if gitea_part_token in config['DEFAULT']['TOKEN']:
+        print("Nокен актуален.")
+        return config['DEFAULT']['TOKEN']
+    else:
+        print('Токен не актуален. Запрос нового токена.')
+        config['DEFAULT']['TOKEN'] = str(auth(username,passwd))
+        with open(path, 'w') as configfile:
+            config.write(configfile)
+        return config['DEFAULT']['TOKEN']
+
+
+def call_token(username,passwd):
     headers = {
-        # Already added when you pass json=
-        # 'Content-Type': 'application/json',
+            'accept': 'application/json',
+        }
+
+    json_data = {
+            'name': 'test',
+        }
+    response = requests.get('http://localhost:3000/api/v1/users/' + username + '/tokens', headers=headers,json=json_data, verify=False, auth=(username, passwd))
+    if len(response.text)<4:
+        return ''
+    else:
+        part_token = find_param('token_last_eight', response)
+        return part_token
+
+
+def auth(username,passwd):
+    headers = {
         'accept': 'application/json',
     }
 
     json_data = {
-        'name': 'test222',
+        'name': 'test',
     }
-
-    response = requests.post('http://localhost:3000/api/v1/users/user1/tokens', headers=headers, json=json_data, verify=False, auth=(username, passwd))
+    response = requests.post('http://localhost:3000/api/v1/users/'+username+'/tokens', headers=headers, json=json_data, verify=False, auth=(username, passwd))
     print(response)
-    if response.status_code ==400:
-        response = requests.delete('http://localhost:3000/api/v1/users/user1/tokens/test222', headers=headers, json=json_data, verify=False, auth=(username, passwd))
-        response = requests.post('http://localhost:3000/api/v1/users/user1/tokens', headers=headers, json=json_data, verify=False, auth=(username, passwd))
-        sha = find_param("sha",response)
-        return sha
-    if response.status_code ==201:
-        sha = find_param("sha", response)
-        return sha
-
-
-
-
-def request(req):
-    headers = {
-        'accept': 'application/json',
-        'authorization': 'Basic cm9vdDpyb290',
-    }
-    response = requests.get("http://localhost:3000"+req,headers=headers)
-    return response
-
-def create_user():
-    headers = {
-        'accept': 'application/json',
-        'authorization':'Basic cm9vdDpyb290',
-        # Already added when you pass json= but not when you pass data=
-        # 'Content-Type': 'application/json',
-    }
-
-    json_data = {
-        'email': 'user@example.com',
-        'full_name': 'user1',
-        'login_name': 'user1',
-        'must_change_password': True,
-        'password': 'password',
-        'send_notify': True,
-        'source_id': 0,
-        'username': 'user1',
-        'visibility': 'public',
-    }
-
-    response = requests.post('http://localhost:3000/api/v1/admin/users', headers=headers, json=json_data)
-    print()
+    sha = find_param("sha", response)
+    return sha
 
 
 def find_param(param,response):
@@ -85,6 +78,38 @@ def find_param(param,response):
             result = res.split('"')[1]
             print()
             return result
+
+
+def request(req,token):
+    headers = {
+        'accept': 'application/json',
+        'authorization': 'token '+token,
+    }
+    response = requests.get("http://localhost:3000"+req,headers=headers)
+    return response
+
+
+def create_user(username,token):
+    if not user_is_here(username):
+        headers = {
+            'accept': 'application/json',
+            'authorization':'token '+token,
+        }
+
+        json_data = {
+            'email': 'user@example.com',
+            'full_name': username,
+            'login_name': username,
+            'must_change_password': True,
+            'password': 'password',
+            'send_notify': True,
+            'source_id': 0,
+            'username': username,
+            'visibility': 'public',
+        }
+
+        response = requests.post('http://localhost:3000/api/v1/admin/users', headers=headers, json=json_data)
+        print()
 
 
 def user_is_here(user):
@@ -109,9 +134,11 @@ def encode_import_text(text):
     text = base64.b64encode(bytes(text, "UTF-8")).decode("UTF-8")
     return text
 
+
 def decode_export_text(text):
     text = base64.b64decode(text).decode("UTF-8")
     return text
+
 
 def create_repo(name,token):
     headers = {
@@ -167,24 +194,13 @@ def push_file(token):
         },
         'message': '',
         'new_branch': 'master',
-        # 'sha':"",
         'signoff': True,
-        # 'type':'file',
     }
-
-
-
-
     response = requests.post('http://localhost:3000/api/v1/repos/user1/test/contents/testfile2.md', headers=headers,json=json_data)
-    # info = requests.get('http://localhost:3000/api/v1/repos/root/test/contents/readme2.md', headers=headers,json=json_data)
-    # sha = find_param("sha",info)
-    # json_data['sha'] = sha
-    # response2 = requests.get('http://localhost:3000/api/v1/repos/root/test/contents/readme2.md', headers=headers,json=json_data)
 
 
 start_gitea()
-token = auth()
-# create_user()
+token = get_token('root','root')
 print(user_is_here("user1"))
 create_repo('my_test_repo2',token)
 push_file(token)
