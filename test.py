@@ -10,9 +10,13 @@ def start_gitea():
     sub = subprocess.run('whoami', stdout=subprocess.PIPE)
     user = sub.stdout.decode('ASCII').split("\n")[0]
     os.chdir('/home/' + user + '/gitea')
-    os.system('docker-compose up -d')
+    start_docker = subprocess.run(['docker-compose','up','-d'], capture_output=True)
+    # os.system('docker-compose up -d')
+    output = start_docker.stderr.decode('ASCII').split("\n")
     os.chdir(cur_dir)
-    print()
+    for i in output:
+        if 'done' in i:
+            return True
 
 
 def stop_gitea():
